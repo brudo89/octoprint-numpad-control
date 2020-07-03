@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
-import datetime
 import json
 import logging
 import os
@@ -8,45 +7,50 @@ import socket
 from itertools import product
 from pprint import pformat
 
-import pygame
+import keyboard
 import requests
 import yaml
 
+from config import *
+
 logger = logging.getLogger()
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(logfile=LOGFILE, level=logging.DEBUG)
 
-pygame.init()
-screen = pygame.display.set_mode((320, 240))
+try:
+    import fcntl
+    KDSETLED = 0x4B32
+    SCR_LED = 0x01
+    NUM_LED = 0x02
+    CAP_LED = 0x04
+    logger.info('turning on num-lock led!')
+    with os.open('/dev/console', os.O_NOCTTY) as fd:
+        fcntl.ioctl(fd, KDSETLED, NUM_LED)
+except ModuleNotFoundError:
+    logger.warning('cannot control num-lock led!')
 
-CFG_FILE = os.path.expanduser('~/.octoprint/config.yaml')
-OCTO_PORT = 80
-OCTO_HOST = 'octopi'
+if API_KEY is None:
+    CFG_FILE = os.path.expanduser('~/.octoprint/config.yaml')
+    logger.debug('reading config : %s', CFG_FILE)
+    with open(CFG_FILE) as fp:
+        CONFIG = yaml.safe_load(fp)
 
 if OCTO_HOST is None:
     OCTO_HOST = socket.gethostname()
 
-logger.debug('reading config : %s', CFG_FILE)
-with open(CFG_FILE) as fp:
-    CONFIG = yaml.safe_load(fp)
-
 HEADERS = {'Content-Type': 'application/json', 'X-Api-Key': CONFIG['api']['key']}
 
-BED_WIDTH = BED_DEPTH = 220
-SIDE_DIST = 40
-JOG_HEIGHT = 10
-POS_WIDTH = POS_DEPTH = [SIDE_DIST, BED_WIDTH/2, BED_WIDTH - SIDE_DIST]
+# leveling positions
+POS_WIDTH = [SIDE_DIST, BED_WIDTH/2, BED_WIDTH - SIDE_DIST]
+POS_DEPTH = [SIDE_DIST, BED_DEPTH/2, BED_DEPTH - SIDE_DIST]
 BED_POS = list(product(POS_DEPTH, POS_WIDTH))
 logger.debug('bed positions : %s', BED_POS)
 
-JOG_STEP = JOG_STEP_X = JOG_STEP_Y = JOG_STEP_Z = 10
 JOG_MOV = list(product([-JOG_STEP_Y, 0, JOG_STEP_Y], [-JOG_STEP_X, 0, JOG_STEP_X]))
-logger.debug('jog movements : %s', BED_POS)
+logger.debug('jog movements : %s', JOG_MOV)
 
-BED_ON_TEMP = 60
-TOOL_ON_TEMP = 200
-
-NUML_MOD = 4096  # numlock on
-NUML_OFF = 0     # numlock off
+NUM_LOCK = True   # current state (toggled)
+NUML_MOD = True   # numlock on
+NUML_OFF = False  # numlock off
 
 
 def api_get(route, data=None, headers=HEADERS):
@@ -87,45 +91,44 @@ def toggle_tool_temp(tool_is_on=None, tool='tool0'):
 
 key_map = {}
 
+
 # add for both numlock on and off
 for mod in (NUML_MOD, NUML_OFF):
-    key_map[(256, mod)] = {'key_name': 'Num+0', 'route': 'printer/printhead', 'tasks': [
+    key_map[(SCN_0, mod)] = {'key_name': 'Num+0', 'route': 'printer/printhead', 'tasks': [
         {'command': 'home', 'axes': ['x', 'y', 'z']}
     ]}
-    key_map[(266, mod)] = {'key_name': 'NumDot', 'route': 'printer/printhead', 'tasks': [
+    key_map[(SCN_DOT, mod)] = {'key_name': 'NumDot', 'route': 'printer/printhead', 'tasks': [
         {'command': 'home', 'axes': ['x', 'y']}
     ]}
-    key_map[(271, mod)] = {'key_name': 'NumEnter', 'route': 'printer/printhead', 'tasks': [
+    key_map[(SCN_ENTER, mod)] = {'key_name': 'NumEnter', 'route': 'printer/printhead', 'tasks': [
         {'command': 'home', 'axes': ['z']}
     ]}
 
-    key_map[(269, mod)] = {'key_name': 'NumMinus', 'route': 'printer/printhead', 'tasks': [
-        {'command': 'jog', 'absolute': False, 'z': -10},
+    key_map[(SCN_MINUS, mod)] = {'key_name': 'NumMinus', 'route': 'printer/printhead', 'tasks': [
+        {'command': 'jog', 'absolute': False, 'z': -JOG_STEP_Z},
     ]}
-    key_map[(270, mod)] = {'key_name': 'NumPlus', 'route': 'printer/printhead', 'tasks': [
-        {'command': 'jog', 'absolute': False, 'z': 10},
+    key_map[(SCN_PLUS, mod)] = {'key_name': 'NumPlus', 'route': 'printer/printhead', 'tasks': [
+        {'command': 'jog', 'absolute': False, 'z': JOG_STEP_Z},
     ]}
 
-    key_map[(267, mod)] = {'key_name': 'NumDivide', 'func': toggle_bed_temp}
-    key_map[(268, mod)] = {'key_name': 'NumMultiply', 'func': toggle_tool_temp}
+    key_map[(SCN_DIV, mod)] = {'key_name': 'NumDivide', 'func': toggle_bed_temp}
+    key_map[(SCN_MULT, mod)] = {'key_name': 'NumMultiply', 'func': toggle_tool_temp}
 
-for i, (y, x) in enumerate(BED_POS):
+
+for i, (py, px), (sy, sx) in zip(SCN_NUMS, BED_POS, JOG_MOV):
     # add absolute positions for leveling
-    key = (i + 1 + 256, NUML_MOD)
-    key_map[key] = {
+    key_map[(i, NUML_MOD)] = {
         'key_name': 'NumLck{}'.format(i+1),
         'route': 'printer/printhead', 'tasks': [
             {'command': 'jog', 'absolute': True, 'z': JOG_STEP_Z},
-            {'command': 'jog', 'absolute': True, 'x': x, 'y': y},
+            {'command': 'jog', 'absolute': True, 'x': px, 'y': py},
         ]}
 
-for i, (y, x) in enumerate(JOG_MOV):
-    # add relative positions for movement
-    key = (i + 1 + 256, NUML_OFF)
-    key_map[key] = {
+    # add relative movements for manual control
+    key_map[(i, NUML_OFF)] = {
         'key_name': 'NumOff{}'.format(i+1),
         'route': 'printer/printhead', 'tasks': [
-            {'command': 'jog', 'absolute': False, 'x': x, 'y': y},
+            {'command': 'jog', 'absolute': False, 'x': sx, 'y': sy},
         ]}
 
 logger.debug('registered keys: %s', pformat(key_map, indent=4))
@@ -171,23 +174,23 @@ def trigger(key, mod, **kwargs):
         logger.warning('task disabled while not operational!')
 
 
+def handler(event, event_type='down'):
+    global NUM_LOCK
+
+    if event.is_keypad and event.event_type == event_type:
+        key = event.scan_code
+        logger.info('KEYSCN: %s', key)
+        logger.debug(vars(event))
+
+        if event.name == 'num lock':
+            NUM_LOCK = not NUM_LOCK
+            logger.info('NUM_LOCK: %s', NUM_LOCK)
+
+        else:
+            trigger(key, NUM_LOCK)
+
+
 if __name__ == '__main__':
     operational()
-
-    triggered = datetime.datetime.now() - datetime.timedelta(hours=1)
-    delay = datetime.timedelta(seconds=0.1)
-
-    logger.debug('waiting for keypress event')
-
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
-                now = datetime.datetime.now()
-                delta = now - triggered
-                if delta > delay:
-                    triggered = now
-                    logger.debug(event)
-                    trigger(event.key, event.mod)
-                    logger.debug('waiting for keypress event')
-                else:
-                    logger.warning('time delay not reached %s < %s', delta, delay)
+    keyboard.hook(handler)
+    keyboard.wait()
