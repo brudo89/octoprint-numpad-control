@@ -1,0 +1,7 @@
+events:
+  enabled: True
+  subscriptions:
+  - event: Startup
+    command: python ~/octoprint-numpad-control/octoprint-numpad-control.py
+    type: system
+    enabled: True
