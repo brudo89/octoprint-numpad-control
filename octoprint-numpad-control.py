@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import json
+import sys
 import logging
 import os
 import socket
@@ -20,6 +21,9 @@ KDSETLED = 0x4B32
 SCR_LED = 0x01
 NUM_LED = 0x02
 CAP_LED = 0x04
+
+if TEST_MODE is None:
+    TEST_MODE == '--test' in sys.argv[1:]
 
 try:
     import fcntl
@@ -173,6 +177,7 @@ def trigger(key, mod, **kwargs):
     action = key_map.get((key, mod))
     if action is None:
         logger.debug('nothing to do for key=%s mod=%s', key, mod)
+
     elif enabled(action):
         func = action.get('func')
         if func is not None:
@@ -184,17 +189,18 @@ def trigger(key, mod, **kwargs):
         logger.warning('task disabled while not operational!')
 
 
-def handler(event, event_type='down'):
+def handler(event, event_type='down', test_mode=TEST_MODE):
+
+    if event.event_type != event_type:
+        return
+
     logger.debug(vars(event))
 
-    if event.is_keypad and event.event_type == event_type:
-        key = event.scan_code
+    if event.name == 'num lock':
+        toggle_num_lock()
 
-        if event.name == 'num lock':
-            toggle_num_lock()
-
-        else:
-            trigger(key, NUM_LOCK)
+    elif not test_mode:
+        trigger(event.scan_code, NUM_LOCK)
 
 
 if __name__ == '__main__':
