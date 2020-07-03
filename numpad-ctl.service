@@ -1,0 +1,14 @@
+[Unit]
+Description=Run Octoprint Numpad Control Service
+After=network.target
+
+[Service]
+ExecStart=/home/pi/octoprint-numpad-control/venv/bin/python -u octoprint-numpad-control.py
+WorkingDirectory=/home/pi/octoprint-numpad-control
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
