@@ -14,22 +14,24 @@ import yaml
 from config import *
 
 logger = logging.getLogger()
-logging.basicConfig(logfile=LOGFILE, level=logging.DEBUG)
+logging.basicConfig(filename=LOGFILE, level=logging.DEBUG)
+
+KDSETLED = 0x4B32
+SCR_LED = 0x01
+NUM_LED = 0x02
+CAP_LED = 0x04
 
 try:
     import fcntl
-    KDSETLED = 0x4B32
-    SCR_LED = 0x01
-    NUM_LED = 0x02
-    CAP_LED = 0x04
     logger.info('turning on num-lock led!')
-    with os.open('/dev/console', os.O_NOCTTY) as fd:
-        fcntl.ioctl(fd, KDSETLED, NUM_LED)
+    fd = os.open('/dev/console', os.O_NOCTTY)
+    fcntl.ioctl(fd, KDSETLED, NUM_LED)
 except ModuleNotFoundError:
+    fd = fcntl = None
     logger.warning('cannot control num-lock led!')
 
 if API_KEY is None:
-    CFG_FILE = os.path.expanduser('~/.octoprint/config.yaml')
+    CFG_FILE = '/home/pi/.octoprint/config.yaml'
     logger.debug('reading config : %s', CFG_FILE)
     with open(CFG_FILE) as fp:
         CONFIG = yaml.safe_load(fp)
@@ -65,6 +67,14 @@ def api_post(route, data, headers=HEADERS):
     data = json.dumps(data) if not isinstance(data, str) else data
     logger.debug('request: %s', json.dumps(dict(url=url, data=data, headers=headers), indent=4))
     return requests.post(url, data=data, headers=headers)
+
+
+def toggle_num_lock():
+    global NUM_LOCK
+    NUM_LOCK = not NUM_LOCK
+    logger.info('NUM_LOCK: %s', NUM_LOCK)
+    if fd and fcntl:
+        fcntl.ioctl(fd, KDSETLED, NUM_LED if NUM_LOCK else 0)
 
 
 def toggle_bed_temp(bed_is_on=None):
@@ -175,16 +185,13 @@ def trigger(key, mod, **kwargs):
 
 
 def handler(event, event_type='down'):
-    global NUM_LOCK
+    logger.debug(vars(event))
 
     if event.is_keypad and event.event_type == event_type:
         key = event.scan_code
-        logger.info('KEYSCN: %s', key)
-        logger.debug(vars(event))
 
         if event.name == 'num lock':
-            NUM_LOCK = not NUM_LOCK
-            logger.info('NUM_LOCK: %s', NUM_LOCK)
+            toggle_num_lock()
 
         else:
             trigger(key, NUM_LOCK)
