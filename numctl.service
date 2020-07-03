@@ -3,7 +3,7 @@ Description=Run Octoprint Numpad Control Service
 After=network.target
 
 [Service]
-ExecStart=/home/pi/octoprint-numpad-control/venv/bin/python -u octoprint-numpad-control.py
+ExecStart=/home/pi/octoprint-numpad-control/venv/bin/python -u OctoNumCtl.py
 WorkingDirectory=/home/pi/octoprint-numpad-control
 StandardOutput=inherit
 StandardError=inherit
