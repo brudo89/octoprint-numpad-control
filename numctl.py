@@ -156,9 +156,14 @@ def operational(task: dict = None, is_op=None):
 
     if is_op is None:
         response = api_get('printer', {'exclude': 'temperature'})
-        data = response.json()
-        logger.debug('response: %s : %s', response, json.dumps(data, indent=4))
-        is_op = data['state']['flags']['operational']
+        try:
+            data = response.json()
+            logger.debug('response: %s : %s', response, json.dumps(data, indent=4))
+            is_op = data['state']['flags']['operational']
+        except Exception as e:
+            logger.error('%s: %s', e.__class__.__name__, e)
+            logger.error('illegal or none response from server')
+            logger.error('response: %s', response)
 
     if is_op:
         logger.info('operational: %s', is_op)
