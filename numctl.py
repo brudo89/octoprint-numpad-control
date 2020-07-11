@@ -28,7 +28,7 @@ try:
     logger.info('turning on num-lock led!')
     fd = os.open('/dev/console', os.O_NOCTTY)
     fcntl.ioctl(fd, KDSETLED, NUM_LED)
-except ModuleNotFoundError:
+except (ModuleNotFoundError, PermissionError):
     fd = fcntl = None
     logger.warning('cannot control num-lock led!')
 
@@ -167,8 +167,28 @@ def operational(task: dict = None, is_op=None):
     return is_op
 
 
+def in_bounds(task):
+    # {'command': 'jog', 'absolute': True, 'x': px, 'y': py},
+    # {'command': 'jog', 'absolute': False, 'x': sx, 'y': sy},
+    is_in = True
+    if task['command'] == 'jog':
+        if task['absolute']:
+            is_in = all([
+                task.get('x', 0) <= BED_DEPTH,
+                task.get('y', 0) <= BED_WIDTH,
+                task.get('z', 0) <= MAX_HEIGHT,
+            ])
+        else:
+
+            is_in = all([])
+
+
+
+    return is_in
+
+
 def enabled(task):
-    return operational(task)
+    return operational(task) and in_bounds(task)
 
 
 def trigger(key, mod, **kwargs):
